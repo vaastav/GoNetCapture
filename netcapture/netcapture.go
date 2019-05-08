@@ -19,9 +19,18 @@ func (a *Address) String() string {
 	return a.IP + ":" + a.Port
 }
 
-type AddressStats struct {
-	SrcCount int
-	DstCount int
+type Connection struct {
+	Protocol string
+	Src Address
+	Dst Address
+}
+
+func (c *Connection) String() string {
+	return c.Protocol + "-" + c.Src.String() + "->" + c.Dst.String()
+}
+
+type ConnectionStats struct {
+	Count int
 }
 
 type NetCaptureConfig {
@@ -34,31 +43,32 @@ type NetCapture struct {
 	handle *pcap.Handle
 	config NetCaptureConfig
 	capture_channel chan int
-	Stats map[string]AddressStats
+	Connections map[string]*Connection
+	Stats map[string]ConnectionStats
 }
 
-func (n *NetCapture) updateSrcDstCount(address string, isSrc bool) {
+func (n *NetCapture) addConn(connection *Connection) {
+	conn := connection.String()
+	if _, ok := n.Connections[conn]; !ok {
+		n.Connections[conn] = connection
+	}
+}
+
+func (n *NetCapture) updateCount(connection *Connection) {
+	address := connection.String()
 	if as, ok := n.Stats[address]; ok {
-		if isSrc {
-			as.SrcCount += 1
-		} else {
-			as.DstCount += 1
-		}
+		as.Count += 1
 		n.Stats[address] = as
 	} else {
-		as := AddressStats{}
-		if isSrc {
-			as.SrcCount = 1
-		} else {
-			as.DstCount = 1
-		}
+		as := ConnectionStats{}
+		as.Count = 1
 		n.Stats[address] = as
 	}
 }
 
 func (n *NetCapture) processPacket(packet gopacket.Packet) {
-	var srcAddr AddressStats
-	var dstAddr AddressStats
+	var srcAddr ConnectionStats
+	var dstAddr ConnectionStats
 
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	if ipLayer != nil {
@@ -80,11 +90,9 @@ func (n *NetCapture) processPacket(packet gopacket.Packet) {
 		srcAddr.Port = tcp.SrcPort.String()
 		dstAddr.Port = tcp.DstPort.String()
 	}
-
-	src := srcAddr.String()
-	dst := dstAddr.String()
-	n.updateSrcDstCount(src, true)
-	n.updateSrcDstCount(dst, false)
+	conn := Connection{Protocol:"tcp", Src : srcAddr, Dst : dstAddr}
+	n.addConn(conn)
+	n.updateCount(conn)
 }
 
 func (n *NetCapture) ProcessPackets() {
