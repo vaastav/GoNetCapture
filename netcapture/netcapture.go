@@ -8,6 +8,7 @@ import (
 	"github.com/google/gopacket/pcap"
 	"io/ioutil"
 	"os"
+	"sync"
 )
 
 type Address struct {
@@ -23,6 +24,10 @@ type Connection struct {
 	Protocol string
 	Src Address
 	Dst Address
+}
+
+type Stat struct {
+	Stats map[string]ConnectionStats
 }
 
 func (c *Connection) String() string {
@@ -45,6 +50,7 @@ type NetCapture struct {
 	capture_channel chan int
 	Connections map[string]*Connection
 	Stats map[string]ConnectionStats
+	mux sync.Mutex
 }
 
 func (n *NetCapture) addConn(connection *Connection) {
@@ -56,6 +62,7 @@ func (n *NetCapture) addConn(connection *Connection) {
 
 func (n *NetCapture) updateCount(connection *Connection) {
 	address := connection.String()
+	n.mux.Lock()
 	if as, ok := n.Stats[address]; ok {
 		as.Count += 1
 		n.Stats[address] = as
@@ -64,6 +71,7 @@ func (n *NetCapture) updateCount(connection *Connection) {
 		as.Count = 1
 		n.Stats[address] = as
 	}
+	n.mux.Unlock()
 }
 
 func (n *NetCapture) processPacket(packet gopacket.Packet) {
@@ -109,6 +117,13 @@ func (n *NetCapture) ProcessPackets() {
 				continue
 		}
 	}
+}
+
+func (n *NetCapture) GetStats() Stat {
+	n.mux.Lock()
+	stat := Stat{Stats : n.Stats}
+	n.mux.Unlock()
+	return stat
 }
 
 func (n *NetCapture) StartCapture() {
