@@ -1,9 +1,11 @@
 package collector
 
 import (
-	"github.com/vaastav/GoNetCapture/netcapture" nc
+	"log"
+	nc "github.com/vaastav/GoNetCapture/netcapture"
 	"net"
 	"net/rpc"
+	"time"
 )
 
 type Collector struct {
@@ -21,22 +23,23 @@ func (c* Collector) GetStats(arg int, stats *nc.Stat) error {
 	return nil
 }
 
-func LaunchCollector(config_file string, timeout time.Duration, ip string) error {
+func LaunchCollector(config_file string, timeout time.Duration, ip string) {
 	capture, err := nc.InitializeCapture(config_file, timeout)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 	addr, err := net.ResolveTCPAddr("tcp", ip)
 	if err != nil {
-		return nil
+		log.Fatal(err)
 	}
 	listener, err := net.ListenTCP("tcp", addr)
 	if err != nil {
-		return nil
+		log.Fatal(err)
 	}
 
 	collector :=  Collector{capture : capture}
 	capture.StartCapture()
+	log.Println("Successfully launched collector")
 	rpc.Register(&collector)
 	rpc.Accept(listener)
 }

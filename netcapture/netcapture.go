@@ -2,13 +2,13 @@ package netcapture
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"io/ioutil"
+	"log"
 	"os"
 	"sync"
+	"time"
 )
 
 type Address struct {
@@ -38,7 +38,7 @@ type ConnectionStats struct {
 	Count int
 }
 
-type NetCaptureConfig {
+type NetCaptureConfig struct {
 	Device string `json:"device"`
 	Snapshot_len int `json:"snapshot_len"`
 	Promiscuous bool `json:"promiscuous"`
@@ -53,14 +53,14 @@ type NetCapture struct {
 	mux sync.Mutex
 }
 
-func (n *NetCapture) addConn(connection *Connection) {
+func (n *NetCapture) addConn(connection Connection) {
 	conn := connection.String()
 	if _, ok := n.Connections[conn]; !ok {
-		n.Connections[conn] = connection
+		n.Connections[conn] = &connection
 	}
 }
 
-func (n *NetCapture) updateCount(connection *Connection) {
+func (n *NetCapture) updateCount(connection Connection) {
 	address := connection.String()
 	n.mux.Lock()
 	if as, ok := n.Stats[address]; ok {
@@ -75,14 +75,14 @@ func (n *NetCapture) updateCount(connection *Connection) {
 }
 
 func (n *NetCapture) processPacket(packet gopacket.Packet) {
-	var srcAddr ConnectionStats
-	var dstAddr ConnectionStats
+	var srcAddr Address
+	var dstAddr Address
 
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	if ipLayer != nil {
-		ip, err := ipLayer.(*layers.IPv4)
-		if err != nil {
-			//TODO : Log this at some print level
+		ip, ok := ipLayer.(*layers.IPv4)
+		if !ok {
+			log.Println("Packet was not IPv4")
 		}
 
 		srcAddr.IP = ip.SrcIP.String()
@@ -91,9 +91,9 @@ func (n *NetCapture) processPacket(packet gopacket.Packet) {
 
 	tcpLayer := packet.Layer(layers.LayerTypeTCP)
 	if tcpLayer != nil {
-		tcp, err := tcpLayer.(*layers.TCP)
-		if err != nil {
-			//TODO : Log this at some print level
+		tcp, ok := tcpLayer.(*layers.TCP)
+		if !ok {
+			log.Println("Packet was not TCP")
 		}
 		srcAddr.Port = tcp.SrcPort.String()
 		dstAddr.Port = tcp.DstPort.String()
@@ -109,7 +109,7 @@ func (n *NetCapture) ProcessPackets() {
 	for {
 		select {
 			case <-n.capture_channel:
-				//TODO : Log something here
+				log.Println("Stopping capture of packets")
 				return
 			case packet := <-packet_chan:
 				n.processPacket(packet)
@@ -127,6 +127,7 @@ func (n *NetCapture) GetStats() Stat {
 }
 
 func (n *NetCapture) StartCapture() {
+	log.Println("Starting Capture")
 	go n.ProcessPackets()
 }
 
@@ -136,6 +137,7 @@ func (n *NetCapture) StopCapture() {
 }
 
 func InitializeCapture(config_file string, timeout time.Duration) (*NetCapture, error) {
+	log.Println("Initializing capture")
 	file, err := os.Open(config_file)
 	if err != nil {
 		return nil, err
@@ -154,7 +156,8 @@ func InitializeCapture(config_file string, timeout time.Duration) (*NetCapture, 
 		return nil, err
 	}
 
-	n := &NetCapture{handle, config, make(chan int), map[string]NodeStats{}}
+	n := &NetCapture{handle : handle, config : config, capture_channel : make(chan int), Connections : map[string]*Connection{}, Stats : map[string]ConnectionStats{}}
+	log.Println("Initialization capture complete")
 	return n, nil
 }
 
